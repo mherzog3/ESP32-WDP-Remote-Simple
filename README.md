@@ -8,3 +8,4 @@ Use demo project in folder "ESP32-WDP-Remote-Simple-Demo". Rename example-config
 
 # Explanations for the use in Win-Digipet
 German description for using the Remote control with Win-Digipet:
+https://www.windigipet.de/foren/index.php?action=downloadWDP;sa=dl;id=WDP_ESP32_Remote
