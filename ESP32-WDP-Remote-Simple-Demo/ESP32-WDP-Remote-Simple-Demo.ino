@@ -17,10 +17,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.*/
 #include <WiFiClient.h>
 #include <WiFi.h>
 
+// Include the AiEsp32RotaryEncoder library found here or via Arduino IDE Library Manager :
+// https://github.com/igorantolic/ai-esp32-rotary-encoder
 #include "AiEsp32RotaryEncoder.h"
 #include "Arduino.h"
 #include "config.h"
 #include <EEPROM.h>
+
+// Include the Bounce2 library found here or via Arduino IDE Library Manager :
+// https://github.com/thomasfredericks/Bounce2
+#include <Bounce2.h>
 
 // define the number of bytes you want to access
 #define EEPROM_SIZE 4
@@ -38,6 +44,7 @@ byte HeartBeat[] = {0xFF,0xFD,0xFB,0xF7,0xF3,0xEB,0xDF,0xD3,0xC7,0xBB,0xAF,0xA3,
 
 AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, ROTARY_ENCODER_BUTTON_PIN, ROTARY_ENCODER_VCC_PIN, ROTARY_ENCODER_STEPS);
 
+Bounce2::Button * buttons = new Bounce2::Button[maxGPIO];
 
 float versionF = 1.0;
 String sendi = "";
@@ -65,8 +72,7 @@ double sollV;
 
 bool fx[32];
 bool fxAvail[32];
-
-int buttState[maxGPIO];
+String fxName[32];
 
 int steps[2][150];
 int stepsCount[2];
@@ -167,16 +173,16 @@ void setup()
   Serial.printf("CurLokID %d \n", curLokID);
 
   for (int i = 0; i < maxGPIO; i++) {
-    buttState[i] = HIGH;
     if (buttConfig[i] != 0) {
-      pinMode(i, INPUT_PULLUP);
+      buttons[i].attach(i, INPUT_PULLUP  );       //setup the bounce instance for the current button
+      buttons[i].interval(25);              // interval in ms
+      buttons[i].setPressedState(LOW);
     }
     if (ledConfig[i] != 0) {
       pinMode(i, OUTPUT);
       digitalWrite(i, LOW);
     }
   }
-
 
   if (statusAlive != 0) {
     //ledcAttachPin(statusAlive, PWM1_Ch);
@@ -349,6 +355,7 @@ void connectWDP() {
     sendi.replace(":", "");
     client.print(sendi);
     client.print(String("[Command SysStatus]"));
+    client.print(String("[Command LokParams 1;1]"));
     client.print(String("[Command LokList]"));
     sysState = 3;
   } else {
@@ -386,8 +393,8 @@ void updateLED() {
             digitalWrite(i, (tick<=500) ? LOW : HIGH);
           }
         } else if ((ledConfig[i] >= 1000) && (ledConfig[i] <= 1031)) {
-          if (fxAvail[buttConfig[i] - 1000]) {
-            client.print(String("[Command LokFunction " + String(curLokID) + ";" + String(buttConfig[i] - 1000) + ";" + (fx[buttConfig[i] - 1000] ? "0" : "1") + "]"));
+          if (fxAvail[ledConfig[i] - 1000]) {
+            digitalWrite(i, fx[ledConfig[i]-1000] ? HIGH : LOW);
           }
         }
 
@@ -405,8 +412,14 @@ void processIncoming() {
   int startC2;
   int startC3;
   int endC2;
+  bool extFX;
   int endC3;
   int index;
+  int index2;
+  int index3;
+  int funcNo;
+  int decoderNo;
+  int iconNo;
   int sollGTemp;
   bool fxChange=false;
   bool newFX;
@@ -460,11 +473,61 @@ void processIncoming() {
 
 
             } else if (index <= 5 + 31) {
-               
-              newFX= line.substring(startC, endC).equals("1");
-              if (fx[index - 5]!=newFX){
-                fx[index - 5]=newFX;
-                fxChange=true;
+
+              if (index==5) extFX=line.substring(startC, endC).equals("ext"); //new LokState Format of WDP 2025?
+
+              if (!extFX){ //old Lokstate format until WDP 2021
+                newFX= line.substring(startC, endC).equals("1");
+                if (fx[index - 5]!=newFX){
+                  fx[index - 5]=newFX;
+                  fxChange=true;
+                }
+              } else {
+                if (index==6){
+                  newFX= line.substring(startC, endC).equals("1");
+                  if (fx[0]!=newFX){
+                    fx[0]=newFX;
+                    Serial.printf("Fx %d = %d\n", 0,newFX ? 1 : 0);
+                    fxChange=true;
+                  }
+                } else if (index==7){ // | seperated list of fx; each element: funcNo§state
+                    String fxStr = line.substring(startC, endC);
+                    String fxSubStr;
+                    index2 = 0;
+                    startC2 = 0;
+                    endC2 = fxStr.indexOf('|', startC2);
+                    while (endC2 > 0) {
+                      String fxSubStr = fxStr.substring(startC2, endC2);    
+                      index3 = 0;            
+                      startC3 = 0;
+                      endC3 = fxSubStr.indexOf('§', startC3);
+                      while (endC3 > 0) {         
+
+                        if (index3==0) {
+                          funcNo=fxSubStr.substring(startC3, endC3).toInt()+1;
+                        } else if (index3==1) {
+                          if ((funcNo>0)  && (funcNo<=31)){
+                            newFX= fxSubStr.substring(startC3, endC3).equals("1");
+                            if (fx[funcNo]!=newFX){
+                              fx[funcNo]=newFX;
+                              Serial.printf("Fx %d = %d\n", funcNo,newFX ? 1 : 0);
+                              fxChange=true;
+                            }
+                          }
+                        }
+
+                        startC3 = endC3 + 1;
+                        endC3 = fxSubStr.indexOf('§', startC3);
+                        if ((endC3 < 0) && (startC3 < fxSubStr.length())) endC3 = fxSubStr.length();
+                        index3++;
+                      }
+
+                      startC2 = endC2 + 1;
+                      endC2 = fxStr.indexOf('|', startC2);
+                      if ((endC2 < 0) && (startC2 < fxStr.length())) endC2 = fxStr.length();
+                      index2++;
+                    }
+                }
               }
               
             } else {
@@ -482,6 +545,11 @@ void processIncoming() {
         } else if (cmd.equals("Stop")) {
           goStop = false;
         } else if (cmd.equals("LokInfo")) {
+          for (index3=0;index3<32;index3++){
+            fxAvail[index3]=false;
+            fx[index3]=false;
+            fxName[index3]="";
+          }
           index = 0;
           startC = 0;
           endC = line.indexOf(';', startC);
@@ -497,15 +565,70 @@ void processIncoming() {
               } else {
                 measPB[(index - 1) >> 1] = line.substring(startC, endC).toFloat() * 0.001;
               }
-            } else if (index <= 59 + 16) { //F0-F16 at 59-75 check if Fx available for decoder
-              fxAvail[index - 59] = (line.substring(startC, endC).toInt() > 0);
-            } else if (index <= 59 + 16 + 17) { //FD F0-F16 at 76-92 FD decoder not supported yet
-            } else if (index <= 93 + 11) { //F17-F28 at 93-104 check if Fx available for decoder
-              fxAvail[index - 93 + 17] = (line.substring(startC, endC).toInt() > 0);
-            } else if (index <= 93 + 11 + 12) { //FD F17-F28 at 105-116 FD decoder not supported yet
-            } else if (index <= 117 + 2) { //F29-F31 at 117-119 check if Fx available for decoder
-              fxAvail[index - 117 + 29] = (line.substring(startC, endC).toInt() > 0);
-            } else if (index <= 117 + 2 + 3) { //FD F29-F31 at 120-122 FD decoder not supported yet
+            }
+            if (index==59) extFX=line.substring(startC, endC).equals("ext"); //new Format of FX List for WDP 2025
+
+            if (!extFX){ //old format until WDP 2021
+
+              if (index <= 59 + 16) { //F0-F16 at 59-75 check if Fx available for decoder
+                fxAvail[index - 59] = (line.substring(startC, endC).toInt() > 0);
+              } else if (index <= 59 + 16 + 17) { //FD F0-F16 at 76-92 FD decoder not supported yet
+              } else if (index <= 93 + 11) { //F17-F28 at 93-104 check if Fx available for decoder
+                fxAvail[index - 93 + 17] = (line.substring(startC, endC).toInt() > 0);
+              } else if (index <= 93 + 11 + 12) { //FD F17-F28 at 105-116 FD decoder not supported yet
+              } else if (index <= 117 + 2) { //F29-F31 at 117-119 check if Fx available for decoder
+                fxAvail[index - 117 + 29] = (line.substring(startC, endC).toInt() > 0);
+              } else if (index <= 117 + 2 + 3) { //FD F29-F31 at 120-122 FD decoder not supported yet
+              }
+            } else {
+              if (index==60){
+                  fxAvail[0] = (line.substring(startC, endC).toInt() > 0);
+              } else if (index==63){
+                  fxName[0] = line.substring(startC, endC);
+              } else if (index==62){ // | seperated list of fx; each element: decoderNo§funcNo§iconNo§funcName
+                  String fxStr = line.substring(startC, endC);
+                  String fxSubStr;
+                  index2 = 0;
+                  startC2 = 0;
+                  
+                  
+                  endC2 = fxStr.indexOf('|', startC2);
+                  while (endC2 > 0) {
+                    String fxSubStr = fxStr.substring(startC2, endC2);        
+                    index3 = 0;   
+                    startC3 = 0;
+                    endC3 = fxSubStr.indexOf('§', startC3);
+                     
+                    while (endC3 > 0) {         
+                      //Serial.printf("%d %d %d\n",index3,startC3,endC3);
+                      if (index3==0) {
+                        decoderNo=fxSubStr.substring(startC3, endC3).toInt();
+                      } else if (index3==1) {
+                        funcNo=fxSubStr.substring(startC3, endC3).toInt()+1;
+                      } else if (index3==2) {
+                        iconNo=fxSubStr.substring(startC3, endC3).toInt();
+                        if ((funcNo>0)  && (funcNo<=31) && (decoderNo==0) && (iconNo!=-2)){ //iconNo = -2 empty place
+                          fxAvail[funcNo]=(iconNo > 0);
+                        }
+                        //Serial.printf("%d %d %d\n",decoderNo,funcNo,iconNo);     
+                      } else if (index3==3) {                          
+                        if ((funcNo>0)  && (funcNo<=31) && (decoderNo==0)){
+                          fxName[funcNo]=fxSubStr.substring(startC3, endC3);
+                        }
+                      }
+
+                      startC3 = endC3 + 1;
+                      endC3 = fxSubStr.indexOf('§', startC3);
+                      if ((endC3 < 0) && (startC3 < fxSubStr.length())) endC3 = fxSubStr.length();
+                      index3++;
+                    }
+
+                    startC2 = endC2 + 1;
+                    endC2 = fxStr.indexOf('|', startC2);
+                    if ((endC2 < 0) && (startC2 < fxStr.length())) endC2 = fxStr.length();
+                    index2++;
+                  }
+              }
             }
             index++;
             startC = endC + 1;
@@ -552,7 +675,7 @@ void processIncoming() {
               }
             } else if (index <= 2) {
               String speedStepStr = line.substring(startC, endC);
-              int index2 = 0;
+              index2 = 0;
               startC2 = 0;
               endC2 = speedStepStr.indexOf('#', startC2);
               while (endC2 > 0) {
@@ -671,12 +794,10 @@ void releaseLoco(){
 
 //evaluate button states
 void checkButtons() {
-  int currentState;
   for (int i = 0; i < maxGPIO; i++) {
     if (buttConfig[i] != 0) {
-
-      currentState = digitalRead(i);
-      if (buttState[i] == HIGH && currentState == LOW) {
+      buttons[i].update();
+      if (buttons[i].pressed()) {
         Serial.println("Button "+ String(i) + " pressed");
 
         if (buttConfig[i] == 1) {
@@ -706,7 +827,6 @@ void checkButtons() {
         }
       }
 
-      buttState[i] = currentState;
     }
 
   }
