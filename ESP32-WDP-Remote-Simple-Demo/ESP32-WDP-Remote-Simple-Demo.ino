@@ -581,20 +581,22 @@ void processIncoming() {
               } else if (index <= 117 + 2 + 3) { //FD F29-F31 at 120-122 FD decoder not supported yet
               }
             } else {
+              
               if (index==60){
                   fxAvail[0] = (line.substring(startC, endC).toInt() > 0);
               } else if (index==63){
                   fxName[0] = line.substring(startC, endC);
               } else if (index==62){ // | seperated list of fx; each element: decoderNo§funcNo§iconNo§funcName
-                  String fxStr = line.substring(startC, endC);
-                  String fxSubStr;
-                  index2 = 0;
+                  //Serial.println("fxStr");
+                  String fxStr = line.substring(startC, endC);                                    
+                  index2 = 0;f
                   startC2 = 0;
                   
                   
                   endC2 = fxStr.indexOf('|', startC2);
                   while (endC2 > 0) {
-                    String fxSubStr = fxStr.substring(startC2, endC2);        
+                    String fxSubStr = fxStr.substring(startC2, endC2);  
+                    //Serial.println(fxSubStr);      
                     index3 = 0;   
                     startC3 = 0;
                     endC3 = fxSubStr.indexOf('§', startC3);
@@ -610,7 +612,7 @@ void processIncoming() {
                         if ((funcNo>0)  && (funcNo<=31) && (decoderNo==0) && (iconNo!=-2)){ //iconNo = -2 empty place
                           fxAvail[funcNo]=(iconNo > 0);
                         }
-                        //Serial.printf("%d %d %d\n",decoderNo,funcNo,iconNo);     
+                        //Serial.printf("Func Data %d %d %d\n",decoderNo,funcNo,iconNo);     
                       } else if (index3==3) {                          
                         if ((funcNo>0)  && (funcNo<=31) && (decoderNo==0)){
                           fxName[funcNo]=fxSubStr.substring(startC3, endC3);
