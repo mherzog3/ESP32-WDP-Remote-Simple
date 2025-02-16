@@ -589,7 +589,7 @@ void processIncoming() {
               } else if (index==62){ // | seperated list of fx; each element: decoderNo§funcNo§iconNo§funcName
                   //Serial.println("fxStr");
                   String fxStr = line.substring(startC, endC);                                    
-                  index2 = 0;f
+                  index2 = 0;
                   startC2 = 0;
                   
                   
