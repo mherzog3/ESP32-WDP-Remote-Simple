@@ -496,11 +496,13 @@ void processIncoming() {
                     index2 = 0;
                     startC2 = 0;
                     endC2 = fxStr.indexOf('|', startC2);
+                    if ((endC2 < 0) && (startC2 < fxStr.length()) && (3 <= fxStr.length()) ) endC2 = fxStr.length();
                     while (endC2 > 0) {
                       String fxSubStr = fxStr.substring(startC2, endC2);    
                       index3 = 0;            
                       startC3 = 0;
                       endC3 = fxSubStr.indexOf('§', startC3);
+                      if ((endC3 < 0) && (startC3 < fxSubStr.length())) endC3 = fxSubStr.length();
                       while (endC3 > 0) {         
 
                         if (index3==0) {
@@ -594,6 +596,7 @@ void processIncoming() {
                   
                   
                   endC2 = fxStr.indexOf('|', startC2);
+                  if ((endC2 < 0) && (startC2 < fxStr.length()) && (6 <= fxStr.length()) ) endC2 = fxStr.length();
                   while (endC2 > 0) {
                     String fxSubStr = fxStr.substring(startC2, endC2);  
                     //Serial.println(fxSubStr);      
